@@ -30,3 +30,7 @@ LoveBoost is a simple Telegram bot that sends random, uplifting, and loving mess
 ## Disclaimer
 
 This bot is for educational and personal use. Keep your bot token secure!
+
+## License
+
+The license for this project has not been decided yet.
