@@ -1,1 +1,5 @@
 venv312/
+key.txt
+__pycache__/
+*.pyc
+users.json
