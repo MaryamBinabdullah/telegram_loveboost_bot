@@ -8,6 +8,7 @@ from telegram.ext import (
     ConversationHandler,
     filters,
     CallbackQueryHandler,
+    ApplicationHandlerStop,
 )
 from telegram.request import HTTPXRequest
 from telegram.error import TimedOut, NetworkError
@@ -24,12 +25,29 @@ warnings.filterwarnings("ignore", category=UserWarning, module="telegram.ext._co
 # BOT_TOKEN = 'key here'
 
 # we read it from a file so we don't accidentally share it up to github hehe
+
 try:
     with open('key.txt', 'r') as f:
-        BOT_TOKEN = f.read().strip() 
-    print("🔑 Bot token loaded from key.txt")
+        lines = f.readlines()
+        BOT_TOKEN = None
+        GIPHY_API_KEY = None
+        for line in lines:
+            if line.startswith("TELEGRAM_BOT_TOKEN="):
+                BOT_TOKEN = line.split("=", 1)[1].strip()
+            elif line.startswith("GIPHY_API_KEY="):
+                GIPHY_API_KEY = line.split("=", 1)[1].strip()
+        
+        if not BOT_TOKEN:
+            raise ValueError("TELEGRAM_BOT_TOKEN not found in key.txt")
+        if not GIPHY_API_KEY:
+            raise ValueError("GIPHY_API_KEY not found in key.txt")
+        
+        print("🔑 Bot token and GIPHY key loaded from key.txt")
 except FileNotFoundError:
-    print("❌ ERROR: key.txt not found! Create it with your bot token.")
+    print("❌ ERROR: key.txt not found! Create it with your keys.")
+    exit(1)
+except ValueError as e:
+    print(f"❌ ERROR: {e}")
     exit(1)
 
 # where we keep all our love notes (user data hehe)
@@ -100,6 +118,63 @@ love_u_more = [
     "noooo, i love YOU more! 😘",
 ]
 
+
+import requests
+
+# send a random cute gif from giphy
+# async def send_random_gif(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def send_scheduled_gif(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    
+    # cute search terms
+    search_terms = [
+        "cute love", "hug anime", "cheek kiss anime", "pats anime", "heart eyes anime", 
+        "you are loved", "love you anime", "sweet anime", "adorable", "warm hug anime"
+    ]
+    
+    # pick random search term
+    term = random.choice(search_terms)
+    
+    try:
+        # search giphy for gifs
+        url = "https://api.giphy.com/v1/gifs/search"
+        params = {
+            "api_key": GIPHY_API_KEY,
+            "q": term,
+            "limit": 50, # diffrent giffs 
+            "offset": random.randint(0, 100), # so we aviod repeat
+            "rating": "g",  # safe for work
+            "lang": "en"
+        }
+        
+        response = requests.get(url, params=params)
+        data = response.json()
+        
+        if data["data"]:
+            # pick random gif from results
+            gif = random.choice(data["data"])
+            gif_url = gif["images"]["original"]["url"]
+            
+            # send gif to user
+            await context.bot.send_animation(
+                chat_id=chat_id,
+                animation=gif_url
+            )
+            print(f"🎬 sent GIF for '{term}' to {chat_id}")
+        else:
+            await safe_send_message(
+                context.bot,
+                chat_id,
+                "🥺 couldnt find a cute gif right now. Try again later!"
+            )
+            
+    except Exception as e:
+        print(f"❌ GIF error: {e}")
+        await safe_send_message(
+            context.bot,
+            chat_id,
+            "💔 oops! My gif machine broke. I'll fix it soon! 😢"
+        )
 # send love, even if the internet is being moody
 async def safe_send_message(bot, chat_id, text, reply_markup=None, parse_mode=None, max_retries=3):
     for attempt in range(max_retries):
@@ -126,31 +201,46 @@ async def safe_send_message(bot, chat_id, text, reply_markup=None, parse_mode=No
 def schedule_user_job(application, chat_id, hours):
     async def job_callback(context: ContextTypes.DEFAULT_TYPE):
         user_data = users.get(chat_id, {})
+    
+    # skip if not subscribed or no name
         if not user_data.get("subscribed", False) or not user_data.get("name"):
-            return
+            return  # don't crash, just exit
 
-        name = user_data["name"]
-        message = random.choice(message_templates).format(name=name)
+        name = user_data["name"] 
         
-        # send it with retries because love never gives up
-        success = await safe_send_message(context.bot, chat_id, message)
-        if success:
-            print(f"sent to {name} ({chat_id}): {message}")
+        # check if it's time to send a gif based on schedule
+        gif_hours = user_data.get("gif_schedule_hours", 24)  # default: every 24h
+        last_gif = user_data.get("last_gif_time", 0)
+        current_time = asyncio.get_event_loop().time()
+        
+        if current_time - last_gif >= gif_hours * 3600:
+            # time to send a gif!
+            await send_scheduled_gif(context, chat_id, name)
+            # update last gif time
+            users[chat_id]["last_gif_time"] = current_time
+            save_users(users)
         else:
-            print(f"💀 gave up after 3 tries for {name} internet wins this round")
+            # send text message
+            message = random.choice(message_templates).format(name=name)
+            # send it with retries because love never gives up
+            success = await safe_send_message(context.bot, chat_id, message)
+            if success:
+                print(f"sent to {name} ({chat_id}): {message}")
+            else:
+                print(f"💀 gave up after 3 tries for {name} internet wins this round")
 
-    # clear old schedule if exists
-    job_name = f"love_{chat_id}"
-    for job in application.job_queue.get_jobs_by_name(job_name):
-        job.schedule_removal()
+        # clear old schedule if exists
+        job_name = f"love_{chat_id}"
+        for job in application.job_queue.get_jobs_by_name(job_name):
+            job.schedule_removal()
 
-    # set up new schedule
-    application.job_queue.run_repeating(
-        job_callback,
-        interval=hours * 3600, # convert hours to seconds
-        first=60, # first love note in 60 seconds
-        name=job_name
-    )
+        # set up new schedule
+        application.job_queue.run_repeating(
+            job_callback,
+            interval=hours * 3600, # convert hours to seconds
+            first=60, # first love note in 60 seconds
+            name=job_name
+        )
     print(f"⏰ love scheduled for {chat_id} every {hours} hours")
 
 # when someone says /start welcome them home
@@ -183,6 +273,10 @@ async def receive_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
         users[chat_id] = {}
     users[chat_id]["name"] = name
     users[chat_id]["subscribed"] = True
+    users[chat_id]["send_gifs"] = True
+ 
+    users[chat_id]["last_gif_time"] = 0  
+    users[chat_id]["gif_schedule_hours"] = 24 
     save_users(users)
 
     # show beautiful frequency buttons right away!
@@ -246,6 +340,7 @@ async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     name = user_data.get("name", "friend")
     interval = user_data.get("interval_hours", 24)
+    gif_status = "on 🎬" if user_data.get("send_gifs", True) else "off 📝"
 
     # make some cute buttons
     keyboard = [
@@ -255,9 +350,11 @@ async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ],
         [
             InlineKeyboardButton("💌 send love now", callback_data="send_now"),
-            InlineKeyboardButton("❓ /help", callback_data="help_help"),
+            InlineKeyboardButton("🎬 send cute gif", callback_data="send_gif"),
+            InlineKeyboardButton("🖼️ gif schedule", callback_data="set_gif_schedule"),
         ],
         [
+            InlineKeyboardButton("❓ /help", callback_data="help_help"),
             InlineKeyboardButton("❌ cancel", callback_data="cancel"),
         ]
     ]
@@ -278,9 +375,12 @@ async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # someone wants to change their name let them!
 async def update_name_globally(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = str(update.effective_chat.id)
+    print(f"🔍 DEBUG: update_name_globally triggered for {chat_id}") 
     
     # only if we are waiting for a name
     if context.user_data.get("awaiting_name"):
+        print(f"🔍 DEBUG: awaiting_name is True for {chat_id}")  
+       
         new_name = update.message.text.strip()
         print(f"🔍 new name: '{new_name}'")
 
@@ -300,7 +400,11 @@ async def update_name_globally(update: Update, context: ContextTypes.DEFAULT_TYP
 
         # we're done waiting
         context.user_data["awaiting_name"] = False
+        print(f"🔍 DEBUG: awaiting_name set to False for {chat_id}")  
+   
     else:
+        print(f"🔍 DEBUG: awaiting_name is False for {chat_id} — ignoring text")  
+       
         return 
 
 # if they say "love you" — we drown them in extra love!
@@ -309,10 +413,10 @@ async def love_u_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
     words = text.split()  # split into words for "u" check
 
     # check for "love" or "luv"
-    has_love_word = "love" in text or "luv" in text
+    has_love_word = "love" in text or "luv" in text 
 
     # check for "you" OR standalone "u"
-    has_you_word = "you" in text or "u" in words  # ← "u" must be whole word
+    has_you_word = "you" in text or "u" in words  # "u" must be whole word
 
     if has_love_word and has_you_word:
         await asyncio.sleep(1)  # tiny pause for realism
@@ -325,7 +429,9 @@ async def love_u_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print(f"💌 Love response sent: {response}") # print to console
         print(f"🔍 DEBUG: Received text: '{text}'")
         print(f"🔍 DEBUG: has_love_word: {has_love_word}, has_you_word: {has_you_word}")
-
+        return  ApplicationHandlerStop
+    else:
+        return ApplicationHandlerStop
 # show them how to talk to us
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
@@ -365,6 +471,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "change_name":
         await query.edit_message_text("💌 what's your new name? (just type it!)")
         context.user_data["awaiting_name"] = True
+        print(f"🔍 DEBUG: awaiting_name set to True for {chat_id}")
         return ConversationHandler.END
 
     elif data == "change_frequency":
@@ -444,6 +551,47 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ]])
         )
 
+    elif data == "send_gif":
+        await query.edit_message_text("🎬 searching for the cutest gif for you...")
+        # await send_random_gif(update, context)
+        await send_scheduled_gif(update, context)
+        # don't return conversationhandler.end — we're not in a conversation
+    elif data == "set_gif_schedule":
+    # show gif schedule options
+        keyboard = [
+            [
+                InlineKeyboardButton("🌅 every 12h", callback_data="gif_12"),
+                InlineKeyboardButton("☀️ every 24h", callback_data="gif_24"),
+            ],
+            [
+                InlineKeyboardButton("🌙 every 48h", callback_data="gif_48"),
+                InlineKeyboardButton("🎉 every 168h", callback_data="gif_168"),
+            ],
+            [
+                InlineKeyboardButton("❌ cancel", callback_data="cancel"),
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(
+            "🖼️ *choose your gif schedule*\n"
+            "pick how often you want surprise gifs in your love notes:",
+            reply_markup=reply_markup,
+            parse_mode="markdown"
+        )
+    elif data.startswith("gif_"):
+        hours = int(data.split("_")[1])
+        # store gif schedule (we'll use this later to control gif frequency)
+        users[chat_id]["gif_schedule_hours"] = hours
+        save_users(users)
+        await query.edit_message_text(
+            f"✅ gif schedule set! you'll get surprise gifs every {hours} hour(s) in your love notes 💖\n"
+            f"turn off anytime in /settings → 'set gif schedule'"
+        )
+
+    elif data == "cancel":
+        await query.edit_message_text("settings unchanged. love you! 💖")
+        return ConversationHandler.END
+
     elif data == "help_help":
         await query.edit_message_text(
             "❓ */help* - show this menu!\n"
@@ -477,7 +625,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=reply_markup,
             parse_mode="Markdown"
         )
-
+  
     elif data == "help_close":
         await query.edit_message_text("💌 Help menu closed. I'm always here when you need me! 💖")
 
@@ -544,8 +692,9 @@ async def main():
     application.add_handler(CommandHandler("settings", settings))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CallbackQueryHandler(button_handler))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, update_name_globally))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, love_u_back))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, update_name_globally))
+
 
     # keep our love bot running for 24 hours using pythonanywhere for first time
     try:
