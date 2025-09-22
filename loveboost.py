@@ -17,6 +17,7 @@ import random
 import os
 import json
 import warnings
+import requests  
 
 # shhh, no scary warnings we got this
 warnings.filterwarnings("ignore", category=UserWarning, module="telegram.ext._conversationhandler")
@@ -118,11 +119,7 @@ love_u_more = [
     "noooo, i love YOU more! 😘",
 ]
 
-
-import requests
-
 # send a random cute gif from giphy
-# async def send_random_gif(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def send_scheduled_gif(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     
@@ -230,17 +227,17 @@ def schedule_user_job(application, chat_id, hours):
                 print(f"💀 gave up after 3 tries for {name} internet wins this round")
 
         # clear old schedule if exists
-        job_name = f"love_{chat_id}"
-        for job in application.job_queue.get_jobs_by_name(job_name):
-            job.schedule_removal()
+    job_name = f"love_{chat_id}"
+    for job in application.job_queue.get_jobs_by_name(job_name):
+        job.schedule_removal()
 
-        # set up new schedule
-        application.job_queue.run_repeating(
-            job_callback,
-            interval=hours * 3600, # convert hours to seconds
-            first=60, # first love note in 60 seconds
-            name=job_name
-        )
+    # set up new schedule
+    application.job_queue.run_repeating(
+        job_callback,
+        interval=hours * 3600, # convert hours to seconds
+        first=60, # first love note in 60 seconds
+        name=job_name
+    )
     print(f"⏰ love scheduled for {chat_id} every {hours} hours")
 
 # when someone says /start welcome them home
@@ -274,7 +271,6 @@ async def receive_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     users[chat_id]["name"] = name
     users[chat_id]["subscribed"] = True
     users[chat_id]["send_gifs"] = True
- 
     users[chat_id]["last_gif_time"] = 0  
     users[chat_id]["gif_schedule_hours"] = 24 
     save_users(users)
@@ -405,7 +401,7 @@ async def update_name_globally(update: Update, context: ContextTypes.DEFAULT_TYP
     else:
         print(f"🔍 DEBUG: awaiting_name is False for {chat_id} — ignoring text")  
        
-        return 
+    return 
 
 # if they say "love you" — we drown them in extra love!
 async def love_u_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -429,9 +425,9 @@ async def love_u_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print(f"💌 Love response sent: {response}") # print to console
         print(f"🔍 DEBUG: Received text: '{text}'")
         print(f"🔍 DEBUG: has_love_word: {has_love_word}, has_you_word: {has_you_word}")
-        return  ApplicationHandlerStop
+        raise ApplicationHandlerStop
     else:
-        return ApplicationHandlerStop
+        raise ApplicationHandlerStop
 # show them how to talk to us
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
