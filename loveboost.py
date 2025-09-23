@@ -1,3 +1,4 @@
+# loveboost.py
 """ hey future me if you're reading this, i hope ur drinking lucozade, smiling and remembering how hard it was to make this work. you did it you beautiful, stubborn, brilliant babe. now go spread love darling"""
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -55,6 +56,7 @@ except ValueError as e:
 USERS_FILE = 'users.json'
 
 # load our little love circle if it exists
+AWAITING_NAME = {} # track who is changing their name
 def load_users():
     if not os.path.exists(USERS_FILE):
         return {}
@@ -77,46 +79,12 @@ ASKING_NAME, ASKING_INTERVAL, UPDATING_INTERVAL = 1, 2, 3
 
 # our love notes fill in the {name} with their actual name
 message_templates = [
-    "i love uuuuuuuuuu",
-    "am soooooo proud of you ✨🥺",
-    "am rlyyyy proud of you my {name}",
-    "you're doing amazing, sweetie! 💋",
-    "just a reminder: u r awesome 😊",
-    "sending you a big hug today! 🤗",
-    "you've got this! i believe in you 💪",
-    "thinking of you and all the great things you do ❤️",
-    "you are capable of anything you set your mind to ✨",
-    "remember to be kind to yourself today 💋",
-    "here's a hug to start your day off right 🤗",
-    "you are so loved {name} ❤️",
-    "you light up my life ✨",
-    "have a wonderful day, sweetie! 💋",
-    "💋",
-    "sending all my love 🤗",
-    "so glad you're in my life ❤️",
-    "i love you moooooooorrreeeeeeee! 🥰",
-    "am so lucky to have you in my life ❤️",
-    "am with you, honey 🤗",
-    "just a reminder that you are loved beyond words ✨",
-    "thinking of you and sending all my love to u 💋",
-    "your my special person {name} ❤️",
-    "your my favorite person in the universe 🥰",
-    "i c u, smile my pretty 👀",
-    "you make my life so much better ❤️",
-    "you got a heart of gold ✨",
-    "your soooo awesome am jealous 🤤",
-    "sending you a virtual hug now 🫂",
-    "🫂",
-    "{name} yes ur fabulous 🫂",
-    "superstar 🚀",
+    "i love uuuuuuuuuu","am soooooo proud of you ✨🥺","am rlyyyy proud of you my {name}","you're doing amazing, sweetie! 💋","just a reminder: u r awesome 😊💋","sending you a big hug amma crush uuuu🤗","you've got this! i believe in you 🥹","thinking of you and all the great things you do ❤️","you are capable of anything you set your mind to ✨","ur with me i think of u every moment 💋","here's a hug to start your day off right 🤗","you are so loved {name} ❤️","you light up my life ✨","have a wonderful day, sweetie! 💋","💋","sending all my love 🤗","so glad you're in my life ❤️","i love you moooooooorrreeeeeeee! 🥰","am so lucky to have you in my life ❤️","am with you, honey 🤗","just a reminder that you are loved beyond words ✨","thinking of you and sending all my love to u 💋","your my special person {name} ❤️","your my favorite person in the universe 🥰","i c u, smile my pretty 👀","you make my life so much better ❤️","you got a heart of gold ✨","your soooo awesome am jealous 🤤","sending you a virtual hug now 🫂","🫂","ur mine soooo mine i love u {name} ","{name} yes ur fabulous 🫂","my superstar 🚀","i miss u so much 🥺","don't forget to dream of me! 💋💋💋","i thought of u many times today 🤭","i wonder what r u building? 🛠️🫂","mwah 💋 .. for ur hard work🫂","r u eating well?🫂🥺","don't get too wild!","did u make me proud?✨🫂"
 ]
 
 # when u say love you i wil sooo hit u with extra love!
 love_u_more = [
-    "love u more 💖",
-    "love u tooooo",
-    "love u ♾️",
-    "noooo, i love YOU more! 😘",
+    "love u more 💖","love u tooooo","love u moreeeeeeeeee","love u infinity times ♾️","i loveeeeeeeee u toooo my precious {name}","love u ♾️","noooo, i love YOU moreeeee!","i so love u my {name}","i soooooo love u 💋💋💋","i love u mineeee","ilysm mawaah💋","i love u infinity times ♾️","i love u more than cats"
 ]
 
 # send a random cute gif from giphy
@@ -125,8 +93,7 @@ async def send_scheduled_gif(update: Update, context: ContextTypes.DEFAULT_TYPE)
     
     # cute search terms
     search_terms = [
-        "cute love", "hug anime", "cheek kiss anime", "pats anime", "heart eyes anime", 
-        "you are loved", "love you anime", "sweet anime", "adorable", "warm hug anime"
+        "cute love anime", "hug anime", "cheek kiss anime", "pats anime", "heart eyes anime", "cute love anime", "love you anime","peck anime", "pats anime"
     ]
     
     # pick random search term
@@ -212,7 +179,7 @@ def schedule_user_job(application, chat_id, hours):
         
         if current_time - last_gif >= gif_hours * 3600:
             # time to send a gif!
-            await send_scheduled_gif(context, chat_id, name)
+            await send_scheduled_gif(context, chat_id)
             # update last gif time
             users[chat_id]["last_gif_time"] = current_time
             save_users(users)
@@ -368,66 +335,62 @@ async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     return ConversationHandler.END
 
-# someone wants to change their name let them!
+# someone wants to change their name we gotta let them!
 async def update_name_globally(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = str(update.effective_chat.id)
-    print(f"🔍 DEBUG: update_name_globally triggered for {chat_id}") 
+    new_name = update.message.text.strip()
     
-    # only if we are waiting for a name
-    if context.user_data.get("awaiting_name"):
-        print(f"🔍 DEBUG: awaiting_name is True for {chat_id}")  
-       
-        new_name = update.message.text.strip()
-        print(f"🔍 new name: '{new_name}'")
+    # Save the new name
+    if chat_id not in users:
+        users[chat_id] = {}
+    users[chat_id]["name"] = new_name
+    save_users(users)
 
-        # save it like a treasured memory
-        if chat_id not in users:
-            users[chat_id] = {}
-        users[chat_id]["name"] = new_name
-        save_users(users)
-        print(f"🔍 updated: {users[chat_id]}")
+    await update.message.reply_text(f"your name is now: {new_name} 💖")
+    AWAITING_NAME[chat_id] = False
+    
+    # This return statement is now handled by the parent function
+    return
 
-        # tell them it worked
-        await safe_send_message(
-            context.bot,
-            chat_id,
-            f"your name is now: {new_name} 💖"
-        )
-
-        # we're done waiting
-        context.user_data["awaiting_name"] = False
-        print(f"🔍 DEBUG: awaiting_name set to False for {chat_id}")  
-   
-    else:
-        print(f"🔍 DEBUG: awaiting_name is False for {chat_id} — ignoring text")  
-       
-    return 
-
-# if they say "love you" — we drown them in extra love!
+# The original love_u_back function
 async def love_u_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text.lower()  # make it case-insensitive
-    words = text.split()  # split into words for "u" check
+    text = update.message.text.lower()
+    words = text.split()
 
-    # check for "love" or "luv"
-    has_love_word = "love" in text or "luv" in text 
-
-    # check for "you" OR standalone "u"
-    has_you_word = "you" in text or "u" in words  # "u" must be whole word
-
+    has_love_word = "love" in text or "luv" in text
+    has_you_word = "you" in text or "u" in words
+    
     if has_love_word and has_you_word:
-        await asyncio.sleep(1)  # tiny pause for realism
-        response = random.choice(love_u_more)
+        await asyncio.sleep(1)
+        response_template = random.choice(love_u_more)
+        chat_id = str(update.effective_chat.id)
+        name = users.get(chat_id, {}).get("name", "friend")
+        response = response_template.format(name=name)
         await safe_send_message(
             context.bot,
             update.effective_chat.id,
             response
         )
-        print(f"💌 Love response sent: {response}") # print to console
-        print(f"🔍 DEBUG: Received text: '{text}'")
-        print(f"🔍 DEBUG: has_love_word: {has_love_word}, has_you_word: {has_you_word}")
-        raise ApplicationHandlerStop
-    else:
-        raise ApplicationHandlerStop
+# handle all text messages to catch "love you" and name changes
+async def handle_text_messages(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    chat_id = str(update.effective_chat.id)
+    text = update.message.text.lower()
+    
+    # check if we are awaiting a name change from the settings menu
+    if AWAITING_NAME.get(chat_id, False):
+        await update_name_globally(update, context)
+        
+        return
+        
+    # Check for the "love you" response
+    has_love_word = "love" in text or "luv" in text
+    has_you_word = "you" in text or "u" in text.split()
+    
+    if has_love_word and has_you_word:
+        await love_u_back(update, context)
+        
+        return
+    
 # show them how to talk to us
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
@@ -466,7 +429,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data == "change_name":
         await query.edit_message_text("💌 what's your new name? (just type it!)")
-        context.user_data["awaiting_name"] = True
+        # context.user_data["awaiting_name"] = True
+        AWAITING_NAME[chat_id] = True
         print(f"🔍 DEBUG: awaiting_name set to True for {chat_id}")
         return ConversationHandler.END
 
@@ -509,7 +473,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             name = user_data["name"]
             message = random.choice(message_templates).format(name=name)
             await safe_send_message(context.bot, chat_id, message)
-            await query.edit_message_text("💌 sent! check your messages! 💖")
+            await query.edit_message_text("...💌")
         else:
             await query.edit_message_text("❌ you're not in my love circle yet. say /start first! 💖")
         return ConversationHandler.END
@@ -549,7 +513,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == "send_gif":
         await query.edit_message_text("🎬 searching for the cutest gif for you...")
-        # await send_random_gif(update, context)
+        
         await send_scheduled_gif(update, context)
         # don't return conversationhandler.end — we're not in a conversation
     elif data == "set_gif_schedule":
@@ -576,11 +540,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     elif data.startswith("gif_"):
         hours = int(data.split("_")[1])
-        # store gif schedule (we'll use this later to control gif frequency)
+        # store gif schedule (use this later to control gif frequency)
         users[chat_id]["gif_schedule_hours"] = hours
         save_users(users)
         await query.edit_message_text(
-            f"✅ gif schedule set! you'll get surprise gifs every {hours} hour(s) in your love notes 💖\n"
+            f"gif schedule set! you'll get surprise gifs every {hours} hour(s) in your love notes 💖\n"
             f"turn off anytime in /settings → 'set gif schedule'"
         )
 
@@ -678,7 +642,6 @@ async def main():
         fallbacks=[
             CommandHandler("start", start),
             CallbackQueryHandler(button_handler),
-            MessageHandler(filters.TEXT & ~filters.COMMAND, update_name_globally),
         ],
     )
 
@@ -688,9 +651,7 @@ async def main():
     application.add_handler(CommandHandler("settings", settings))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CallbackQueryHandler(button_handler))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, love_u_back))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, update_name_globally))
-
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_messages))
 
     # keep our love bot running for 24 hours using pythonanywhere for first time
     try:
